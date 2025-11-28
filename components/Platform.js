@@ -1,12 +1,12 @@
-                 import React, { useState, useEffect } from 'react';
+
+        import React, { useState, useEffect } from 'react';
 import { Users, TrendingUp, Clock, Award, Plus, Bell, CheckCircle, Moon, Sun, LogOut, Mail, Lock, X } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
 import { 
   collection, 
   doc, 
   setDoc, 
-  getDoc, 
-  getDocs, 
+  getDoc,  
   updateDoc, 
   query, 
   onSnapshot,
@@ -893,4 +893,4 @@ export default function Platform() {
       </div>
     </div>
   );
-}
+} 
