@@ -1,6 +1,6 @@
 
         import React, { useState, useEffect } from 'react';
-import { Users, TrendingUp, Clock, Award, Plus, Bell, CheckCircle, Moon, Sun, LogOut, Mail, Lock, X } from 'lucide-react';
+import { Users, TrendingUp, Clock, Award, Plus, Bell, CheckCircle, Moon, Sun, LogOut, Mail, Lock, X, Settings, Trash2 } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
 import { 
   collection, 
@@ -8,6 +8,7 @@ import {
   setDoc, 
   getDoc,  
   updateDoc, 
+  deleteDoc,
   query, 
   onSnapshot,
   arrayUnion,
@@ -371,6 +372,30 @@ export default function Platform() {
       console.error('Erreur notification:', error);
     }
   };
+  const deleteNotification = async (e, notifId) =>{
+    e.stopPropagation();
+    try {
+       await deleteDoc(doc(db, 'notifications', notifId));
+    } catch (error) {
+      console.error('Erreur suppression notif:', error);
+    }
+  };
+
+  const handleUpdateProfile = async () => {
+    try {
+      await updateDoc(doc(db, 'users', user.uid),{
+        facebook: user.facebook || '',
+        tiktok: user.tiktok ||'',
+        instagram: user.instagram || '',
+        youtube: user.youtube|| ''
+      });
+      await addNotification('Profil mis à jour succès','success');
+      setView('dashboard');
+    } catch (error) {
+      console.error('Erreur mise à jour profil:', error);
+      alert('Erreur lors de la mise à jour');
+    }
+  };
 
   if (loading) {
     return (
@@ -389,6 +414,83 @@ export default function Platform() {
   const textClass = darkMode ? 'text-gray-100' : 'text-gray-900';
   const textSecondaryClass = darkMode ? 'text-gray-400' : 'text-gray-600';
   const borderClass = darkMode ? 'border-gray-700' : 'border-gray-300';
+
+  // --- AJOUT DE LA VUE PROFIL ---
+  if (view === 'profile') {
+    return (
+      <div className={`min-h-screen ${bgClass} p-4`}>
+        <div className="max-w-2xl mx-auto">
+          <button 
+            onClick={() => setView('dashboard')}
+            className={`mb-4 px-4 py-2 rounded-lg ${darkMode ? 'bg-gray-800 text-gray-300' : 'bg-white text-gray-700'} shadow flex items-center gap-2`}
+          >
+            ← Retour au tableau de bord
+          </button>
+
+          <div className={`${cardBgClass} rounded-xl shadow-lg p-8`}>
+            <h2 className={`text-2xl font-bold ${textClass} mb-6 flex items-center gap-2`}>
+              <Settings className="text-indigo-600" />
+              Modifier mon profil
+            </h2>
+<div className="space-y-4">
+              <div>
+                <label className={`block text-sm font-medium ${textClass} mb-1`}>Facebook</label>
+                <input
+                  type="text"
+                  value={user?.facebook || ''}
+                  onChange={(e) => setUser({ ...user, facebook: e.target.value })}
+                  className={`w-full px-4 py-2 border ${borderClass} rounded-lg focus:ring-2 focus:ring-indigo-500 ${darkMode ? 'bg-gray-700 text-white' : 'bg-white'}`}
+                  placeholder="Nom d'utilisateur ou lien"
+                />
+              </div>
+
+              <div>
+                <label className={`block text-sm font-medium ${textClass} mb-1`}>TikTok</label>
+                <input
+                  type="text"
+                  value={user?.tiktok || ''}
+                  onChange={(e) => setUser({ ...user, tiktok: e.target.value })}
+                  className={`w-full px-4 py-2 border ${borderClass} rounded-lg focus:ring-2 focus:ring-indigo-500 ${darkMode ? 'bg-gray-700 text-white' : 'bg-white'}`}
+                  placeholder="@username"
+                />
+              </div>
+
+              <div>
+                <label className={`block text-sm font-medium ${textClass} mb-1`}>Instagram</label>
+                <input
+                  type="text"
+                  value={user?.instagram || ''}
+                  onChange={(e) => setUser({ ...user, instagram: e.target.value })}
+                  className={`w-full px-4 py-2 border ${borderClass} rounded-lg focus:ring-2 focus:ring-indigo-500 ${darkMode ? 'bg-gray-700 text-white' : 'bg-white'}`}
+                  placeholder="@username"
+                />
+              </div>
+
+              <div>
+                <label className={`block text-sm font-medium ${textClass} mb-1`}>YouTube</label>
+                <input
+                  type="text"
+                  value={user?.youtube || ''}
+                  onChange={(e) => setUser({ ...user, youtube: e.target.value })}
+                  className={`w-full px-4 py-2 border ${borderClass} rounded-lg focus:ring-2 focus:ring-indigo-500 ${darkMode ? 'bg-gray-700 text-white' : 'bg-white'}`}
+                  placeholder="Nom de chaîne"
+                />
+              </div>
+
+              <div className="pt-4">
+                <button
+                  onClick={handleUpdateProfile}
+                  className="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 transition"
+                >
+                  Sauvegarder les modifications
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (view === 'login' || view === 'register') {
     return (
@@ -615,11 +717,19 @@ export default function Platform() {
                     notifications.map(notif => (
                       <div
                         key={notif.id}
-                        className={`p-4 border-b ${borderClass} cursor-pointer hover:opacity-80 ${!notif.read ? (darkMode ? 'bg-gray-700' : 'bg-blue-50') : ''}`}
+                        className={`p-4 border-b ${borderClass} flex justify-between items-start gap-2 hover:opacity-90 ${!notif.read ? (darkMode ? 'bg-gray-700' : 'bg-blue-50') : ''}`}
                         onClick={() => markNotificationAsRead(notif.id)}
                       >
+                      <div className="flex-1">
                         <p className={`text-sm ${textClass}`}>{notif.message}</p>
                         <p className={`text-xs ${textSecondaryClass} mt-1`}>{notif.time}</p>
+                      </div>
+                      <button 
+                        onClick={(e) => deleteNotification(e, notif.id)}
+                        className="text-gray-400 hover:text-red-500 transition p-1"
+                        title="Supprimer">
+                          <Trash2 size={16}/>
+                      </button>
                       </div>
                     ))
                   )}
@@ -632,6 +742,15 @@ export default function Platform() {
               <span className="font-bold text-indigo-600 text-sm md:text-base">{user?.points || 0} pts</span>
             </div>
             
+    
+            <button
+              onClick={() => setView('profile')}
+              className={`p-2 rounded-lg ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-700'} hover:opacity-80 transition`}
+              title="Mon Profil"
+            >
+             <Settings size={20} />
+            </button>
+
             <button
               onClick={handleLogout}
               className={`p-2 rounded-lg ${darkMode ? 'bg-gray-700 text-red-400' : 'bg-gray-100 text-red-600'} hover:opacity-80 transition`}
