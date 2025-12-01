@@ -30,6 +30,10 @@ export default function Platform() {
   const [darkMode, setDarkMode] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [activeMissionId, setActiveMissionId] = useState(null); // La mission en cours
+  const [timer, setTimer] = useState(0); // Le compte à rebours
+  const [isValidating, setIsValidating] = useState(false); // État de chargement pendant la validation
+
 
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
@@ -116,6 +120,20 @@ export default function Platform() {
   useEffect(() => {
     localStorage.setItem('darkMode', JSON.stringify(darkMode));
   }, [darkMode]);
+
+  // --- ROBOT TEMPOREL (Gestion du Timer) ---
+  useEffect(() => {
+    let interval = null;
+    if (activeMissionId && timer > 0) {
+      interval = setInterval(() => {
+        setTimer((seconds) => seconds - 1);
+      }, 1000);
+    } else if (timer === 0) {
+      clearInterval(interval);
+    }
+    return () => clearInterval(interval);
+  }, [activeMissionId, timer]);
+
 
   const addNotification = async (message, type = 'info') => {
     if (!user) return;
@@ -312,6 +330,88 @@ export default function Platform() {
       alert('Erreur lors de la soumission');
     }
   };
+
+  // 1. Démarrer la mission (Ouvre le lien + Lance le Timer)
+  const startMission = (mission) => {
+    if (activeMissionId) {
+      alert("Veuillez finir la mission en cours avant d'en lancer une autre !");
+      return;
+    }
+    
+    // Ouvre le lien dans un nouvel onglet
+    window.open(mission.url, '_blank');
+    
+    // Active le mode "Vérification"
+    setActiveMissionId(mission.id);
+    // On définit un temps aléatoire entre 15 et 20 secondes pour simuler un comportement humain
+    setTimer(Math.floor(Math.random() * 5) + 15);
+  };
+
+  // 2. Validation Automatique par le Système (Transfert des points)
+  const claimReward = async (mission) => {
+    if (mission.ownerId === user.uid) return;
+    setIsValidating(true);
+
+    try {
+      // Vérification finale de sécurité (Si la mission existe toujours)
+      const missionRef = doc(db, 'missions', mission.id);
+      const missionSnap = await getDoc(missionRef);
+      
+      if (!missionSnap.exists() || missionSnap.data().completed >= missionSnap.data().target) {
+        alert("Cette mission est déjà terminée ou n'existe plus.");
+        setIsValidating(false);
+        setActiveMissionId(null);
+        return;
+      }
+
+      // --- TRANSACTION AUTOMATIQUE ---
+      // 1. Mettre à jour la mission (Completed + 1)
+      await updateDoc(missionRef, {
+        completed: increment(1)
+      });
+
+      // 2. Donner les points à celui qui a fait la mission (L'utilisateur actuel)
+      await updateDoc(doc(db, 'users', user.uid), {
+        points: increment(mission.pointCost),
+        totalHelped: increment(1)
+      });
+
+      // 3. Mettre à jour les stats du propriétaire de la mission
+      await updateDoc(doc(db, 'users', mission.ownerId), {
+        totalReceived: increment(1)
+      });
+
+      // 4. Notification pour le propriétaire (Optionnel)
+      const notifData = {
+        userId: mission.owner, // Email du propriétaire
+        message: `Votre mission ${mission.platform} a été complétée ! (+1 vue/like)`,
+        type: 'success',
+        timestamp: new Date().toISOString(),
+        time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+        read: false
+      };
+      await setDoc(doc(collection(db, 'notifications')), notifData);
+
+      // Succès
+      await addNotification(`Bravo ! Mission validée automatiquement. +${mission.pointCost} points`, 'success');
+      
+      // Mise à jour locale de l'utilisateur
+      setUser(prev => ({ 
+        ...prev, 
+        points: prev.points + mission.pointCost,
+        totalHelped: prev.totalHelped + 1
+      }));
+
+    } catch (error) {
+      console.error("Erreur validation auto:", error);
+      alert("Erreur système lors de la validation.");
+    } finally {
+      setIsValidating(false);
+      setActiveMissionId(null);
+      setTimer(0);
+    }
+  };
+
 
   const verifyCompletion = async (mission, verificationId, approve) => {
     if (mission.ownerId !== user.uid) return;
@@ -987,21 +1087,45 @@ export default function Platform() {
                         </div>
                       </div>
 
-                      <div className="flex gap-2">
-                        <a
-                          href={mission.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={`flex-1 ${darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-700'} py-2 px-4 rounded-lg text-center text-sm font-medium hover:opacity-80 transition`}
-                        >
-                          Voir le contenu
-                        </a>
-                        <button
-                          onClick={() => completeMission(mission)}
-                          className="flex-1 bg-green-600 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-green-700 transition"
-                        >
-                          Mission accomplie
-                        </button>
+                      <div className="mt-3">
+                        {activeMissionId === mission.id ? (
+    // CAS 1 : La mission est en cours (Timer actif)
+    <button
+      onClick={() => claimReward(mission)}
+      disabled={timer > 0 || isValidating}
+      className={`w-full py-2 px-4 rounded-lg font-bold text-white transition flex items-center justify-center gap-2
+        ${timer > 0 ? 'bg-gray-400 cursor-wait' : 'bg-green-600 hover:bg-green-700 animate-pulse'}
+      `}
+    >
+      {isValidating ? (
+        <span>Validation en cours...</span>
+      ) : timer > 0 ? (
+        <>
+          <Clock size={18} className="animate-spin" />
+          Vérification en cours... ({timer}s)
+        </>
+      ) : (
+        <>
+          <CheckCircle size={18} />
+          Réclamer mes {mission.pointCost} points !
+        </>
+      )}
+    </button>
+  ) : (
+    // CAS 2 : La mission n'a pas commencé
+    <button
+      onClick={() => startMission(mission)}
+      disabled={activeMissionId !== null} // Empêche de lancer 2 missions à la fois
+      className={`w-full py-2 px-4 rounded-lg font-medium transition flex items-center justify-center gap-2
+        ${activeMissionId !== null 
+          ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
+          : (darkMode ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200')}
+      `}
+    >
+      {activeMissionId !== null ? 'Finissez votre mission en cours...' : '🚀 Lancer la mission'}
+    </button>
+  )}
+   
                       </div>
                     </div>
                   ))
